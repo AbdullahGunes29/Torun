@@ -1,8 +1,9 @@
 # OLD_MONEY-MOD
 ## Hackathon 26 için HürTech ekibimiz üyeleri olarak
--Musa IŞIL
--Abdullah GÜNEŞ
--Muhammet Salih ACAR
+
+- Musa IŞIL
+- Abdullah GÜNEŞ
+- Muhammet Salih ACAR
  
 ---
 
