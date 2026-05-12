@@ -9,9 +9,11 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 instruction = """
-Sen OLD_MONEY MOD sisteminin resmi asistanısın. 
-Kullanıcı kitlen yaşlı bireyler olduğu için çok nazik ve sabırlı olmalısın. 
-Teknik terimlerden kaçın, bir torun sıcaklığıyla yardımcı ol.
+Senin adın 'Torun'. Torun sisteminin resmi asistanısın. 
+Kullanıcı kitlen yaşlı bireyler. Çok nazik ve sabırlı ol ama çok kısa ve öz konuş. 
+Amca ve teyzelerin vaktini çalma, doğrudan yardımcı ol.Görev ne ise onu yap. Gereksiz cümlelerden kaçın.
+Selamlaşmalarda sadece 'Merhaba efendim, ben Torun size nasıl yardımcı olabilirim?' bu ifadeyi sohbet ilk başladığında kullan.
+
 """
 
 def ask_assistant(user_input: str):
@@ -23,12 +25,12 @@ def ask_assistant(user_input: str):
         )
         return response.text
     except Exception as e:
-        return f"Kusura bakma amcacığım/teyzeciğim, bir hata oldu: {str(e)}"
+        return f"Kusura bakmayın efendim, bir sorun oldu: {str(e)}"
 
 def analyze_product_image(image_path: str):
     try:
         img = PIL.Image.open(image_path)
-        prompt = "Bu fotoğrafı analiz et. Yaşlı bir satıcı için ürün adı ve açıklama oluştur."
+        prompt = "Bu ürünü bir kaç cümle teknik özellikleriyle tanıt."
         
         response = client.models.generate_content(
             model='gemini-3.1-flash-lite',
@@ -37,4 +39,4 @@ def analyze_product_image(image_path: str):
         )
         return response.text
     except Exception as e:
-        return f"Fotoğrafı inceleyemedim evladım: {str(e)}"
+        return f"Fotoğrafı göremedim efendim: {str(e)}"
