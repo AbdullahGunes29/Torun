@@ -19,7 +19,7 @@ def get_db():
     finally:
         db.close()
 
-        @app.post("/register", status_code=status.HTTP_201_CREATED)
+@app.post("/register", status_code=status.HTTP_201_CREATED)
 def register_user(
     first_name: str, 
     last_name: str, 
