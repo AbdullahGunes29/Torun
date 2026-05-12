@@ -1,12 +1,11 @@
 import os
-from google import genai # 'genai' yerine 'google'dan genai' olarak çağırıyoruz
+from google import genai 
 from google.genai import types
 from dotenv import load_dotenv
 import PIL.Image
 
 load_dotenv()
 
-# İstemciyi doğru şekilde başlatıyoruz
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 instruction = """
@@ -17,7 +16,6 @@ Teknik terimlerden kaçın, bir torun sıcaklığıyla yardımcı ol.
 
 def ask_assistant(user_input: str):
     try:
-        # Gemini 3.1 Flash-Lite modelini çağırıyoruz
         response = client.models.generate_content(
             model='gemini-3.1-flash-lite', 
             config=types.GenerateContentConfig(system_instruction=instruction),
