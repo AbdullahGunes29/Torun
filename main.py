@@ -5,9 +5,14 @@ from sqlalchemy.orm import Session
 from app.auth import get_db, create_access_token, pwd_context, GenderEnum
 from app.database import User
 from app.routers import asistan, products
+from app.handlers import setup_exception_handlers
 
 app = FastAPI(title="Torun", description="Dijital Torununuz İş Başında")
 
+setup_exception_handlers(app)
+
+app.include_router(asistan.router)
+app.include_router(products.router)
 app.include_router(asistan.router)
 app.include_router(products.router)
 

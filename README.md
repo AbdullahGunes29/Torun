@@ -19,10 +19,11 @@
 # Ekip için rehber 
 
 ### Kurulum
-   Repoyu vscode üzerinde açtıktan sonra terminale şunaları yazarak uygulamayı çalıştırabilirsiniz:
+   vscode uygulamasını açtıktan sonra terminale şunaları yazarak uygulamayı çalıştırabilirsiniz:
 
-1. python3 -m venv .venv (sanal ortam oluştur)
-2. source .venv/bin/activate (sanal ortamı aktif et)
-3. pip install -r requirements.txt (gerekli paketleri indir)
-4. .env dosyası oluşturup içine GEMINI_API_KEY=(kişisel API keyinizi buraya yazın)
-5. uvicorn app.main:app --reload" > (Backend çalıştıktan sonra http://127.0.0.1:8000/docs adresinden test edebilirsiniz.)
+1. Docker Desktop:** [Buradan indirip](https://www.docker.com/products/docker-desktop/) kurun ve çalıştırın (Balina ikonu yeşil olmalı).
+2. git clone https://github.com/AbdullahGunes29/Torun.git (terminalde çalıştır)
+3. cd Torun (terminalde çalıştır)
+5. Ana dizinde bir .env dosyası oluşturun: ve içine "GEMINI_API_KEY=api_anahtarin"
+6. docker-compose up --build (terminalde çalıştır)
+7. Sunucu "Application startup complete" yazısını verdikten sonra tarayıcınızdan şu adrese giderek dükkanı kontrol edebilirsiniz: http://localhost:8000/docs

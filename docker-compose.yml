@@ -1,0 +1,14 @@
+
+
+services:
+  torun_backend:
+    build: .
+    container_name: torun_container
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads         # Yüklenen resimlerin bilgisayarında kalmasını sağlar
+      - ./torun_sistemi.db:/app/torun_sistemi.db # Veritabanının silinmesini engeller
+    env_file:
+      - .env                           # API anahtarını buradan çeker
+    restart: always
