@@ -15,6 +15,8 @@ class ProductConfirm(BaseModel):
     price: str
     image_path: str
 
+# app/routers/products.py dosyasındaki analyze_product fonksiyonunu BUNUNLA DEĞİŞTİR:
+
 @router.post("/analyze")
 async def analyze_product(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
     upload_dir = "uploads"
@@ -24,16 +26,14 @@ async def analyze_product(file: UploadFile = File(...), current_user: User = Dep
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
+    # Gemini'den gelen analiz ARTIK BİR SÖZLÜK (dict)
     analiz = analyze_product_image(file_path)
     
-    p_name, p_desc, p_price = "Bilinmeyen", analiz, "Belirsiz"
-    for line in analiz.split('\n'):
-        if "İSİM:" in line: p_name = line.split(":", 1)[1].strip()
-        if "ÖZELLİK:" in line: p_desc = line.split(":", 1)[1].strip()
-        if "FİYAT:" in line: p_price = line.split(":", 1)[1].strip()
-
-    voice_text = f"{current_user.first_name} amca, fotoğrafı inceledim. Bu sanırım bir {p_name}. " \
-                 f"Fiyatını {p_price} olarak düşündüm. Onaylıyor musun, yoksa değiştirmemi ister misin?"
+    # Eskiden olan .split('\n') döngüsü tamamen silindi çünkü artık doğrudan anahtarlarla erişiyoruz
+    p_name = analiz.get("product_name", "Bilinmeyen Ürün")
+    p_desc = analiz.get("description", "Açıklama belirtilmedi.")
+    p_price = analiz.get("price", "0 TL")
+    voice_text = analiz.get("voice_text", f"{current_user.first_name} amca, fotoğrafı inceledim.")
 
     return {
         "product_name": p_name,
@@ -41,6 +41,14 @@ async def analyze_product(file: UploadFile = File(...), current_user: User = Dep
         "price": p_price,
         "image_path": file_path,
         "voice_text": voice_text
+    }
+    # 4. Gelen sözlüğü (dict) doğrudan frontend'e gönder!
+    return {
+        "product_name": analiz_dict.get("product_name", "Bilinmeyen"),
+        "price": str(analiz_dict.get("price", "0")).replace(" TL", "").strip(),
+        "description": analiz_dict.get("description", "Açıklama yok"),
+        "image_path": file_location,
+        "voice_text": analiz_dict.get("voice_text", "Ürünü ekledim amca.")
     }
 
 @router.post("/confirm")

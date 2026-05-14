@@ -1,0 +1,1210 @@
+asistan.py kodları
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from app.auth import get_db, get_current_user
+from app.database import User, Message
+from app.gemini import ask_assistant
+from app.voice import generate_voice_stream
+from fastapi.responses import StreamingResponse
+from google.genai import types
+
+router = APIRouter(tags=["Asistan"])
+
+@router.get("/asistan")
+def chat(soru: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_messages = db.query(Message).filter(Message.user_id == current_user.id).order_by(Message.timestamp.asc()).limit(10).all()
+    
+    history = [types.Content(role=msg.role, parts=[types.Part(text=msg.content)]) for msg in db_messages]
+    
+    ozel_soru = f"Kullanıcı adı: {current_user.first_name}. Soru: {soru}"
+    cevap = ask_assistant(ozel_soru, history=history)
+    
+    db.add(Message(user_id=current_user.id, role="user", content=soru))
+    db.add(Message(user_id=current_user.id, role="model", content=cevap))
+    db.commit()
+    return {"torun_yaniti": cevap}
+
+@router.get("/asistan-sesli")
+async def chat_voice(soru: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    response = chat(soru=soru, db=db, current_user=current_user)
+    cevap_metni = response["torun_yaniti"]
+    audio_data = await generate_voice_stream(cevap_metni)
+    return StreamingResponse(audio_data, media_type="audio/mpeg")
+
+    products.py kodları
+
+    from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+import os, shutil
+from datetime import datetime
+from pydantic import BaseModel
+from app.auth import get_db, get_current_user
+from app.database import User, Product
+from app.gemini import analyze_product_image
+
+router = APIRouter(tags=["Ürünler"])
+
+class ProductConfirm(BaseModel):
+    product_name: str
+    description: str
+    price: str
+    image_path: str
+
+@router.post("/analyze")
+async def analyze_product(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
+    upload_dir = "uploads"
+    if not os.path.exists(upload_dir): os.makedirs(upload_dir)
+    
+    file_path = os.path.join(upload_dir, f"{datetime.now().timestamp()}_{file.filename}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    analiz = analyze_product_image(file_path)
+    
+    p_name, p_desc, p_price = "Bilinmeyen", analiz, "Belirsiz"
+    for line in analiz.split('\n'):
+        if "İSİM:" in line: p_name = line.split(":", 1)[1].strip()
+        if "ÖZELLİK:" in line: p_desc = line.split(":", 1)[1].strip()
+        if "FİYAT:" in line: p_price = line.split(":", 1)[1].strip()
+
+    voice_text = f"{current_user.first_name} amca, fotoğrafı inceledim. Bu sanırım bir {p_name}. " \
+                 f"Fiyatını {p_price} olarak düşündüm. Onaylıyor musun, yoksa değiştirmemi ister misin?"
+
+    return {
+        "product_name": p_name,
+        "description": p_desc,
+        "price": p_price,
+        "image_path": file_path,
+        "voice_text": voice_text
+    }
+
+@router.post("/confirm")
+async def confirm_product(data: ProductConfirm, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    new_product = Product(
+        product_name=data.product_name,
+        description=data.description,
+        price=data.price,
+        image_path=data.image_path,
+        owner_id=current_user.id,
+        is_active=True
+    )
+    db.add(new_product)
+    db.commit()
+    
+    return {
+        "mesaj": "Ürün eklendi",
+        "voice_text": f"Hayırlı olsun {current_user.first_name} amca, {data.product_name} dükkana eklendi. Başka bir emrin var mı?"
+    }
+
+@router.get("/list")
+def list_my_products(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    products = db.query(Product).filter(Product.owner_id == current_user.id, Product.is_active == True).all()
+    
+    if not products:
+        v_text = f"{current_user.first_name} amca, şu an dükkanın bomboş görünüyor. İstersen birkaç ürün ekleyelim."
+    else:
+        urun_isimleri = ", ".join([p.product_name for p in products])
+        v_text = f"Şu an dükkanında {len(products)} tane ürün var amcacığım. Bunlar: {urun_isimleri}."
+
+    return {
+        "products": products,
+        "voice_text": v_text
+    }
+
+@router.get("/delete-inquiry/{product_id}")
+def delete_inquiry(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    product = db.query(Product).filter(Product.id == product_id, Product.owner_id == current_user.id).first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı amcacığım.")
+    
+
+    voice_text = f"{current_user.first_name} amca, silmek istediğin ürün {product.product_name} mı? " \
+                 f"Fiyatı {product.price} olan ürünün fotoğrafını ekrana getirdim, bir bak bakalım. Sileyim mi?"
+
+    return {
+        "product": product, 
+        "voice_text": voice_text
+    }
+
+@router.delete("/delete-confirm/{product_id}")
+def delete_confirm(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    product = db.query(Product).filter(Product.id == product_id, Product.owner_id == current_user.id).first()
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Ürün zaten yok veya silinemedi.")
+    
+    p_name = product.product_name
+    product.is_active = False
+    db.commit()
+    
+    return {
+        "mesaj": "Ürün başarıyla kaldırıldı",
+        "voice_text": f"Tamamdır {current_user.first_name} amca, {p_name} ürününü dükkandan kaldırdım. Tertemiz oldu!"
+    }
+
+
+auth.py kodları
+
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
+from fastapi import Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+from app.database import SessionLocal, User
+from enum import Enum
+
+class GenderEnum(str, Enum):
+    erkek = "erkek"
+    kiz = "kız"
+    sec = "seç"
+
+
+SECRET_KEY = "torun_gizli_anahtar_99"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+
+def get_db():
+    db = SessionLocal()
+    try: yield db
+    finally: db.close()
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None: raise HTTPException(status_code=401)
+    except JWTError: raise HTTPException(status_code=401, detail="Oturum dolmuş amcacığım.")
+    
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user: raise HTTPException(status_code=401)
+    return user
+
+database.py
+
+from sqlalchemy import create_engine, Column, Integer, String, Text, Date, Boolean, DateTime, ForeignKey
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from datetime import datetime
+
+SQLALCHEMY_DATABASE_URL = "sqlite:///./torun_sistemi.db"
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    first_name = Column(String)
+    last_name = Column(String)
+    birth_date = Column(Date)
+    gender = Column(String)
+    email = Column(String, unique=True, index=True)
+    password = Column(String)
+    
+    products = relationship("Product", back_populates="owner")
+    messages = relationship("Message", back_populates="user")
+
+class Product(Base):
+    __tablename__ = "products"
+    id = Column(Integer, primary_key=True, index=True)
+    product_name = Column(String)
+    description = Column(Text)
+    price = Column(String)
+    image_path = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner = relationship("User", back_populates="products")
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id")) 
+    role = Column(String) 
+    content = Column(Text) 
+    timestamp = Column(DateTime, default=datetime.utcnow) 
+
+    user = relationship("User", back_populates="messages")
+
+Base.metadata.create_all(bind=engine)
+
+
+gemini.py kodları
+
+import os
+import json
+import PIL.Image
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+
+# MOCK FONKSİYONLARIMIZ
+from app.trendyol_mock import get_trendyol_products, delete_trendyol_product, analyze_product_reviews
+
+load_dotenv()
+
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+instruction = """
+Senin adın 'Torun'. Trendyol satıcıları için geliştirilmiş Otonom bir e-ticaret asistanısın.
+Sadece sohbet etmezsin, aynı zamanda sana verilen ARAÇLARI (Tools) kullanarak mağazayı yönetirsin.
+
+KURALLAR:
+1. Kullanıcı ürünlerini görmek isterse, mutlaka 'get_trendyol_products' aracını kullan.
+2. Kullanıcı yorum analizi isterse, önce ürünün ID'sini bul, sonra 'analyze_product_reviews' aracını kullan.
+3. Asla sahte veri uydurma. Veriyi her zaman araçlardan çek.
+4. Müşteriye (Amcaya) cevap verirken son derece saygılı, net ve kısa ol. "Amca" hitabını kullan.
+"""
+
+# Gemini'nin kullanabileceği araçların listesi
+agent_tools = [get_trendyol_products, delete_trendyol_product, analyze_product_reviews]
+
+def ask_assistant(user_input: str, history=None):
+    try:
+        if history is None:
+            history = []
+       
+        # Asistanı araçlarla (Tools) birlikte başlatıyoruz
+        chat = client.chats.create(
+            model='gemini-3.1-flash-lite', 
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                tools=agent_tools,
+                temperature=0.3
+            ),
+            history=history
+        )
+        
+        response = chat.send_message(user_input)
+        return response.text
+    except Exception as e:
+        return f"Kusura bakmayın efendim, beynimde (Agent) bir sorun oldu: {str(e)}"
+
+# KAZAYLA SİLİNEN FOTOĞRAF ANALİZ FONKSİYONU
+def analyze_product_image(image_path: str):
+    try:
+        image = PIL.Image.open(image_path)
+        prompt = """
+        Bu ürün fotoğrafını incele ve bana şu formatta geçerli bir JSON dön:
+        {
+            "product_name": "Kısa ve çekici ürün adı",
+            "price": "Tahmini fiyat (sadece rakam ve TL, örn: 450 TL)",
+            "description": "Ürünün detaylı açıklaması",
+            "voice_text": "Abdullah amca, fotoğrafı inceledim. Bu sanırım bir [ürün adı]. Fiyatını [fiyat] olarak düşündüm. Onaylıyor musun, yoksa değiştirmemi ister misin?"
+        }
+        Sadece JSON formatında cevap ver, markdown (```json) kullanma, fazladan metin yazma.
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-lite',
+            contents=[image, prompt]
+        )
+        
+        # Yanıtı temizle ve JSON'a çevir
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:-3]
+        elif text.startswith("```"):
+            text = text[3:-3]
+            
+        return json.loads(text)
+    except Exception as e:
+        print("Görsel Analiz Hatası:", e)
+        return {
+            "product_name": "Bilinmeyen Ürün",
+            "price": "0 TL",
+            "description": "Görsel analiz edilemedi.",
+            "voice_text": "Amca görseli tam anlayamadım, bilgileri elle girebilir misin?"
+        }
+
+        handlers.py kodları
+
+        from fastapi import Request
+from fastapi.responses import JSONResponse
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def setup_exception_handlers(app):
+    """
+    Uygulama genelindeki tüm hataları maskeleyen ve loglayan fonksiyon.
+    """
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        logger.error(f"HATA OLUŞTU: {request.method} {request.url}")
+        logger.error(f"Detay: {exc}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "torun_yaniti": "Kusura bakmayın efendim, şu an küçük bir teknik aksaklık yaşıyorum. Torununuz hemen ilgileniyor, lütfen birazdan tekrar deneyin.",
+                "hata_kodu": "TORUN_500"
+            },
+        )
+
+
+        static_config.py kodları
+
+        from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+import os
+
+def setup_static_mounts(app: FastAPI):
+    # Projenin çalıştığı ana dizini (root) kesin olarak bulur
+    current_dir = os.getcwd()
+    uploads_path = os.path.join(current_dir, "uploads")
+    
+    if not os.path.exists(uploads_path):
+        os.makedirs(uploads_path)
+        
+    # Her yerden erişilebilir mutlak yolu (absolute path) mount eder
+    app.mount("/uploads", StaticFiles(directory=uploads_path), name="uploads")
+
+    trendyol_mock.py kodları
+
+    # app/trendyol_mock.py
+import json
+
+def get_trendyol_products() -> str:
+    """
+    Kullanıcının Trendyol mağazasındaki aktif ürünleri listeler.
+    Kullanıcı 'ürünlerimi listele', 'neler satıyorum' dediğinde bu aracı kullan.
+    """
+    mock_data = [
+        {"id": 101, "name": "Ahşap Katlanır Sandalye", "price": 450, "stock": 12},
+        {"id": 102, "name": "Bambu Çiçeklik", "price": 250, "stock": 5},
+        {"id": 103, "name": "Seramik Kahve Fincanı", "price": 120, "stock": 0}
+    ]
+    return json.dumps(mock_data, ensure_ascii=False)
+
+def delete_trendyol_product(product_id: int) -> str:
+    """
+    Verilen ID'ye sahip ürünü Trendyol mağazasından siler.
+    Kullanıcı bir ürünü silmek istediğinde önce ID'sini bulup bu aracı kullan.
+    """
+    return f"{product_id} ID'li ürün başarıyla Trendyol'dan silindi."
+
+def analyze_product_reviews(product_id: int) -> str:
+    """
+    Verilen ürün ID'si için Trendyol'daki müşteri yorumlarını analiz eder ve özetler.
+    Kullanıcı 'yorumları analiz et', 'müşteriler ne diyor' dediğinde bu aracı kullan.
+    """
+    if product_id == 101:
+        return "Yorum Analizi: Müşterilerin %80'i ürünün kalitesinden çok memnun. Ancak %20'si kargolama süresinin uzun olmasından şikayetçi."
+    elif product_id == 103:
+        return "Yorum Analizi: Stokta olmayan bu ürün için eskiden 'çok kırılgan' şikayetleri gelmiş."
+    else:
+        return "Bu ürün için henüz yeterli müşteri yorumu bulunmuyor."
+
+
+voice.py kodları
+
+import edge_tts
+import io
+
+VOICE = "tr-TR-AhmetNeural" 
+SPEED = "-10%" 
+
+async def generate_voice_stream(text: str):
+    """Metni sese çevirir ve bir byte akışı (stream) döner."""
+    communicate = edge_tts.Communicate(text, VOICE, rate=SPEED)
+    
+    audio_stream = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_stream.write(chunk["data"])
+    
+    audio_stream.seek(0)
+    return audio_stream
+
+    buraya kadar olanlar backend kodları 
+
+
+    bunlarda frontend 
+
+ axios.js kodları
+
+ import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'http://127.0.0.1:8000',
+});
+
+// İSTEK GİTMEDEN HEMEN ÖNCE ARAYA GİR:
+api.interceptors.request.use((config) => {
+  // Cüzdandan token'ı al
+  const token = localStorage.getItem('torun_token');
+  
+  // Eğer token varsa, güvenliğe (header) göster
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+export default api;
+
+ActionPanels.py kodları
+
+import React, { useState, useRef } from 'react';
+import { X, UploadCloud, CheckCircle, Loader2, ImagePlus, ChevronLeft, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import api from '../api/axios';
+
+// ==========================================
+// 1. BİLEŞEN: ÜRÜN EKLEME VE ANALİZ EKRANI
+// ==========================================
+const ProductAddView = ({ setMessages, setProducts, closePanel, analysisData, setAnalysisData }) => {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = async (e) => {
+    const selected = e.target.files[0];
+    if (selected) {
+      setFile(selected);
+      setPreview(URL.createObjectURL(selected));
+      setAnalysisData(null); 
+      
+      setIsAnalyzing(true);
+      const formData = new FormData();
+      formData.append("file", selected);
+
+      try {
+        const res = await api.post('/analyze', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setAnalysisData(res.data);
+        setMessages(prev => [...prev, { id: Date.now(), text: res.data.voice_text, sender: 'bot' }]);
+      } catch (error) {
+        console.error("Analiz hatası:", error);
+        setMessages(prev => [...prev, { id: Date.now(), text: "Amcacığım fotoğrafı incelerken bir hata oldu, başka bir fotoğraf dener misin?", sender: 'bot' }]);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    }
+  };
+
+  const handleConfirm = async () => {
+    try {
+      const res = await api.post('/confirm', analysisData);
+      setMessages(prev => [...prev, { id: Date.now(), text: res.data.voice_text, sender: 'bot' }]);
+      const listRes = await api.get('/list');
+      setProducts(listRes.data.products);
+      closePanel();
+    } catch (error) {
+      console.error("Kaydetme hatası:", error);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    setAnalysisData({ ...analysisData, [e.target.name]: e.target.value });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div 
+        onClick={() => !isAnalyzing && fileInputRef.current?.click()}
+        className={`w-full h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center transition-all overflow-hidden ${isAnalyzing ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} ${preview ? 'border-gray-700 bg-[#131314]' : 'border-gray-700 hover:border-blue-500 hover:bg-[#1e1f20]'}`}
+      >
+        {preview ? (
+          <img src={preview} alt="Preview" className="w-full h-full object-cover opacity-80" />
+        ) : (
+          <>
+            <UploadCloud size={40} className="text-gray-500 mb-3" />
+            <p className="text-sm text-gray-400 font-medium">Fotoğraf Seç veya Sürükle</p>
+          </>
+        )}
+        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+      </div>
+
+      {isAnalyzing && (
+        <div className="w-full bg-blue-600/20 border border-blue-500/50 text-blue-400 p-4 rounded-2xl font-medium shadow-lg flex items-center justify-center gap-2">
+          <Loader2 className="animate-spin" size={20} />
+          Yapay Zeka İnceliyor...
+        </div>
+      )}
+
+      {analysisData && (
+        <div className="bg-[#1e1f20] p-5 rounded-2xl border border-blue-500/30 space-y-4 shadow-lg">
+          <div>
+            <label className="block text-xs text-blue-400 font-bold uppercase tracking-wider mb-1 ml-1">Ürün Adı</label>
+            <input type="text" name="product_name" value={analysisData.product_name} onChange={handleInputChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none text-sm transition-all" />
+          </div>
+          <div>
+            <label className="block text-xs text-blue-400 font-bold uppercase tracking-wider mb-1 ml-1">Fiyat (TL)</label>
+            <input type="text" name="price" value={analysisData.price} onChange={handleInputChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none text-sm transition-all" />
+          </div>
+          <div>
+            <label className="block text-xs text-blue-400 font-bold uppercase tracking-wider mb-1 ml-1">Açıklama</label>
+            <textarea name="description" value={analysisData.description} onChange={handleInputChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none text-sm min-h-20 transition-all" />
+          </div>
+          <button onClick={handleConfirm} className="w-full bg-green-600 hover:bg-green-500 text-white p-4 rounded-xl font-medium transition-all shadow-lg mt-2">
+            Onayla ve Kaydet
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==========================================
+// 2. BİLEŞEN: ÜRÜN LİSTELEME VE DETAY EKRANI
+// ==========================================
+const ProductListView = ({ products, handleDelete }) => {
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  // Güvenlik: products boş gelirse çökmeyi engelle
+  const safeProducts = products || [];
+
+  if (safeProducts.length === 0) {
+    return (
+      <div className="bg-[#1e1f20] p-5 rounded-2xl border border-gray-800 text-center italic text-gray-400 text-sm">
+        Şu an dükkanda listelenecek ürün görünmüyor amcacığım.
+      </div>
+    );
+  }
+
+  // --- DETAY EKRANI ---
+  if (selectedProduct) {
+    return (
+      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+        <button onClick={() => setSelectedProduct(null)} className="flex items-center gap-2 text-blue-400 hover:text-blue-300 font-medium text-sm transition-all mb-4">
+          <ChevronLeft size={18} /> Ürün Listesine Dön
+        </button>
+
+        <div className="w-full h-64 bg-[#131314] rounded-2xl overflow-hidden border border-gray-800 shadow-lg p-2">
+           {selectedProduct.image_path ? (
+             <img src={`http://127.0.0.1:8000/${selectedProduct.image_path}`} alt="Ürün" className="w-full h-full object-contain rounded-xl" />
+           ) : (
+             <div className="w-full h-full flex items-center justify-center text-gray-600">Görsel Yok</div>
+           )}
+        </div>
+
+        <div className="bg-[#1e1f20] p-6 rounded-2xl border border-gray-800 shadow-lg space-y-4">
+          <div className="flex justify-between items-start">
+            <h2 className="text-xl font-bold text-white">{selectedProduct.product_name}</h2>
+            <span className="bg-blue-600 text-white px-3 py-1 rounded-lg font-bold">{selectedProduct.price}</span>
+          </div>
+          <div className="h-px w-full bg-gray-800 my-4"></div>
+          <p className="text-gray-400 text-sm leading-relaxed whitespace-pre-wrap">{selectedProduct.description}</p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // --- LİSTE EKRANI ---
+  return (
+    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+      {safeProducts.map(item => (
+        <div key={item.id} className="bg-[#1e1f20] p-4 rounded-2xl border border-gray-800 hover:border-blue-500/50 transition-all group shadow-lg flex gap-4">
+          
+          <div className="flex-1 flex gap-4 cursor-pointer" onClick={() => setSelectedProduct(item)}>
+            <div className="w-24 h-24 shrink-0 bg-[#131314] rounded-xl overflow-hidden border border-gray-700/50 flex items-center justify-center group-hover:scale-105 transition-transform">
+              {item.image_path ? <img src={`http://127.0.0.1:8000/${item.image_path}`} alt="Ürün" className="w-full h-full object-cover" /> : <span className="text-gray-600 text-xs">Görsel Yok</span>}
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-white group-hover:text-blue-400 transition-colors line-clamp-1 mb-1">{item.product_name}</h3>
+              <p className="text-xs text-gray-500 line-clamp-2">{item.description}</p>
+              <span className="inline-block mt-2 text-xs font-bold bg-gray-800 text-blue-400 px-2 py-1 rounded-lg">{item.price}</span>
+            </div>
+          </div>
+          
+          <div className="flex flex-col justify-between items-end border-l border-gray-800 pl-4 w-28 shrink-0">
+             <AnimatePresence mode="wait">
+              {deletingId === item.id ? (
+                <motion.div key="confirm" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col gap-2 w-full">
+                  <button onClick={() => { handleDelete(item.id); setDeletingId(null); }} className="w-full py-2 bg-red-600 text-white rounded-lg text-xs font-bold hover:bg-red-500 transition-all">SİL</button>
+                  <button onClick={() => setDeletingId(null)} className="w-full py-2 bg-gray-700 text-gray-300 rounded-lg text-xs font-bold hover:bg-gray-600 transition-all">VAZGEÇ</button>
+                </motion.div>
+              ) : (
+                <motion.div key="normal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex items-center">
+                  <button onClick={(e) => { e.stopPropagation(); setDeletingId(item.id); }} className="p-3 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-600 hover:text-white transition-all">
+                    <Trash2 size={18} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+        </div>
+      ))}
+    </motion.div>
+  );
+};
+
+// ==========================================
+// 3. ANA BİLEŞEN: ÇERÇEVE (WRAPPER)
+// ==========================================
+const ActionPanel = ({ activeAction, closePanel, products, setProducts, handleDelete, setMessages, analysisData, setAnalysisData }) => {
+  if (!activeAction) return null;
+
+  return (
+    <motion.aside 
+      initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+      className="w-1/2 h-full bg-[#0a0a0a] border-l border-gray-800 shadow-2xl flex flex-col z-20"
+    >
+      <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-[#131314]">
+        <h2 className="text-sm font-bold text-blue-400 tracking-widest uppercase flex items-center gap-2">
+          {activeAction === 'product-add' ? <ImagePlus size={18}/> : <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping" />}
+          {activeAction === 'product-add' ? 'Yeni Ürün Analizi' : 'Ürün Listesi / Detay'}
+        </h2>
+        <button onClick={closePanel} className="p-2 hover:bg-gray-800 rounded-full transition-all text-gray-500 hover:text-white">
+          <X size={20} />
+        </button>
+      </div>
+      
+      <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+        {activeAction === 'product-add' && (
+          <ProductAddView 
+            setMessages={setMessages} 
+            setProducts={setProducts} 
+            closePanel={closePanel} 
+            analysisData={analysisData} 
+            setAnalysisData={setAnalysisData} 
+          />
+        )}
+        
+        {activeAction === 'product-list' && (
+          <ProductListView 
+            products={products} 
+            handleDelete={handleDelete} 
+          />
+        )}
+      </div>
+    </motion.aside>
+  );
+};
+
+export default ActionPanel;
+
+login.py kodları
+
+import React, { useState } from 'react';
+import api from '../api/axios';
+import { motion } from 'framer-motion';
+
+const Login = ({ onLoginSuccess, onSwitchToRegister }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const formData = new URLSearchParams();
+      formData.append('username', email);
+      formData.append('password', password);
+
+      const response = await api.post('/login', formData, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+
+      localStorage.setItem('torun_token', response.data.access_token);
+      localStorage.setItem('torun_user', response.data.user_name);
+      
+      onLoginSuccess();
+    } catch (err) {
+      setError('E-posta veya şifre hatalı amcacığım.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-[#131314] font-sans">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md bg-[#1e1f20] p-8 rounded-3xl border border-gray-800 shadow-2xl"
+      >
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold bg-linear-to-r from-[#4285f4] to-[#d96570] bg-clip-text text-transparent">Torun</h1>
+          <p className="text-gray-400 mt-2">Dükkanına Hoş Geldin</p>
+        </div>
+
+        {error && <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-xl mb-6 text-sm text-center">{error}</div>}
+
+        <form onSubmit={handleLogin} className="space-y-5">
+          <div>
+            <label className="block text-gray-400 text-sm mb-2 ml-1">E-posta</label>
+            <input 
+              type="email" required
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-[#131314] text-white p-4 rounded-2xl border border-gray-800 focus:border-blue-500 outline-none transition-all"
+              placeholder="amca@ornek.com"
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-2 ml-1">Şifre</label>
+            <input 
+              type="password" required
+              value={password} onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-[#131314] text-white p-4 rounded-2xl border border-gray-800 focus:border-blue-500 outline-none transition-all"
+              placeholder="••••••••"
+            />
+          </div>
+          <button 
+            type="submit" disabled={isLoading}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-2xl font-medium transition-all shadow-lg disabled:opacity-50 mt-4"
+          >
+            {isLoading ? 'Giriş Yapılıyor...' : 'Dükkanı Aç'}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center text-sm text-gray-500">
+          Henüz dükkanı açmadın mı?{' '}
+          <button onClick={onSwitchToRegister} className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+            Kayıt Ol
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+export default Login;
+
+
+register.py kodları 
+
+import React, { useState } from 'react';
+import api from '../api/axios';
+import { motion } from 'framer-motion';
+
+const Register = ({ onSwitchToLogin }) => {
+  const [formData, setFormData] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
+    birth_date_str: '',
+    gender: 'seç' // Backend'deki GenderEnum ('erkek', 'kız', 'seç')
+  });
+  
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+
+    // Backend'in beklediği tarih formatı kontrolü (Örn: 29.01.2004)
+    const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
+    if (!dateRegex.test(formData.birth_date_str)) {
+      setError("Tarihi Gün.Ay.Yıl formatında girmelisin (Örn: 29.01.2004)");
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.gender === 'seç') {
+      setError("Lütfen bir cinsiyet seçiniz.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Backend Query parametresi beklediği için 'params' kullanıyoruz
+      const response = await api.post('/register', null, { params: formData });
+      
+      setSuccess(response.data.message || "Kayıt başarılı! Giriş sayfasına yönlendiriliyorsunuz...");
+      
+      // 2 saniye sonra otomatik olarak giriş ekranına at
+      setTimeout(() => {
+        onSwitchToLogin();
+      }, 2000);
+      
+    } catch (err) {
+      setError(err.response?.data?.detail || "Kayıt olurken bir sorun çıktı amcacığım.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-[#131314] font-sans p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-lg bg-[#1e1f20] p-8 rounded-3xl border border-gray-800 shadow-2xl overflow-y-auto max-h-screen custom-scrollbar"
+      >
+        <div className="text-center mb-6">
+          <h1 className="text-3xl font-bold text-white">Aramıza Katıl</h1>
+          <p className="text-gray-400 mt-2 text-sm">Torun sistemine kayıt ol</p>
+        </div>
+
+        {error && <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-xl mb-4 text-sm text-center">{error}</div>}
+        {success && <div className="bg-green-500/10 border border-green-500/50 text-green-400 p-3 rounded-xl mb-4 text-sm text-center">{success}</div>}
+
+        <form onSubmit={handleRegister} className="space-y-4">
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-gray-400 text-xs mb-1 ml-1 uppercase tracking-wider">Ad</label>
+              <input type="text" name="first_name" required value={formData.first_name} onChange={handleChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none transition-all" />
+            </div>
+            <div className="flex-1">
+              <label className="block text-gray-400 text-xs mb-1 ml-1 uppercase tracking-wider">Soyad</label>
+              <input type="text" name="last_name" required value={formData.last_name} onChange={handleChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none transition-all" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-gray-400 text-xs mb-1 ml-1 uppercase tracking-wider">E-posta</label>
+            <input type="email" name="email" required value={formData.email} onChange={handleChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none transition-all" />
+          </div>
+
+          <div>
+            <label className="block text-gray-400 text-xs mb-1 ml-1 uppercase tracking-wider">Şifre <span className="text-[10px] lowercase text-gray-600">(Min 6, 1 büyük harf, 1 rakam)</span></label>
+            <input type="password" name="password" required value={formData.password} onChange={handleChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none transition-all" />
+          </div>
+
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-gray-400 text-xs mb-1 ml-1 uppercase tracking-wider">Doğum Tarihi</label>
+              <input type="text" name="birth_date_str" required placeholder="29.01.2004" value={formData.birth_date_str} onChange={handleChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none transition-all" />
+            </div>
+            <div className="flex-1">
+              <label className="block text-gray-400 text-xs mb-1 ml-1 uppercase tracking-wider">Cinsiyet</label>
+              <select name="gender" value={formData.gender} onChange={handleChange} className="w-full bg-[#131314] text-white p-3 rounded-xl border border-gray-800 focus:border-blue-500 outline-none transition-all appearance-none cursor-pointer">
+                <option value="seç">Seçiniz</option>
+                <option value="erkek">Erkek</option>
+                <option value="kız">Kadın</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-xl font-medium transition-all shadow-lg mt-2 disabled:opacity-50">
+            {isLoading ? 'Kaydediliyor...' : 'Kayıt Ol'}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center text-sm text-gray-500">
+          Zaten dükkanın var mı?{' '}
+          <button onClick={onSwitchToLogin} className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+            Giriş Yap
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+export default Register;
+
+
+sidebar.py kodları 
+
+import React, { useState } from 'react';
+import { PanelLeftClose, PanelLeftOpen, MessageSquare, History, User, Settings, LogOut } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const Sidebar = ({ messages, clearChat }) => {
+  const [isOpen, setIsOpen] = useState(true); // Menü varsayılan açık
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  return (
+    <motion.div 
+      initial={false}
+      animate={{ width: isOpen ? '260px' : '80px' }}
+      className="h-full bg-[#1e1f20] border-r border-gray-800 flex flex-col transition-all duration-300 relative z-30"
+    >
+      {/* ÜST KISIM: Logo ve Gizleme Tuşu */}
+      <div className="p-4 flex items-center justify-between border-b border-gray-800">
+        {isOpen && <h1 className="text-xl font-bold text-blue-500 tracking-wider">TORUN</h1>}
+        <button 
+          onClick={() => setIsOpen(!isOpen)} 
+          className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-all mx-auto"
+        >
+          {isOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+        </button>
+      </div>
+
+      {/* YENİ SOHBET BUTONU */}
+      <div className="p-4">
+        <button onClick={clearChat} className="w-full flex items-center justify-center gap-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 p-3 rounded-xl transition-all border border-blue-500/20">
+          <MessageSquare size={18} />
+          {isOpen && <span className="font-medium text-sm">Yeni Sohbet</span>}
+        </button>
+      </div>
+
+      {/* GEÇMİŞ SOHBETLER (Temsili) */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-3">
+        {isOpen && <p className="text-xs font-bold text-gray-500 mb-3 px-2 mt-2">GEÇMİŞ</p>}
+        <div className="space-y-1">
+          <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[#2b2c2e] text-gray-400 transition-all text-left">
+             <History size={18} className="shrink-0" />
+             {isOpen && <span className="text-sm truncate">Ürün listeleme ve fiy...</span>}
+          </button>
+        </div>
+      </div>
+
+      {/* ALT KISIM: Profil ve Ayarlar Menüsü */}
+      <div className="p-4 border-t border-gray-800 relative">
+        {showProfileMenu && isOpen && (
+          <div className="absolute bottom-full left-4 right-4 mb-2 bg-[#2b2c2e] border border-gray-700 rounded-xl p-2 shadow-2xl overflow-hidden">
+            <button className="w-full flex items-center gap-3 p-3 hover:bg-gray-700 rounded-lg text-sm text-gray-200 transition-all">
+              <User size={16} /> Profilimi Düzenle
+            </button>
+            <button className="w-full flex items-center gap-3 p-3 hover:bg-gray-700 rounded-lg text-sm text-gray-200 transition-all">
+              <Settings size={16} /> Uygulama Ayarları
+            </button>
+            <div className="h-px bg-gray-700 my-1"></div>
+            <button className="w-full flex items-center gap-3 p-3 hover:bg-red-500/20 text-red-400 rounded-lg text-sm transition-all">
+              <LogOut size={16} /> Çıkış Yap
+            </button>
+          </div>
+        )}
+        
+        <button 
+          onClick={() => setShowProfileMenu(!showProfileMenu)}
+          className={`w-full flex items-center ${isOpen ? 'justify-start gap-3' : 'justify-center'} p-2 hover:bg-[#2b2c2e] rounded-xl transition-all`}
+        >
+          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold shrink-0">
+            A
+          </div>
+          {isOpen && (
+            <div className="text-left flex-1">
+              <p className="text-sm font-bold text-white">Abdullah Güneş</p>
+              <p className="text-xs text-gray-400">Dükkan Sahibi</p>
+            </div>
+          )}
+        </button>
+      </div>
+    </motion.div>
+  );
+};
+
+export default Sidebar;
+
+mainlayout.py kodları 
+
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Mic, Send, MicOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import api from '../api/axios';
+import Sidebar from '../components/Sidebar';
+import ActionPanel from '../components/ActionPanel';
+
+const MainLayout = () => {
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState("");
+  const [activeAction, setActiveAction] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [analysisData, setAnalysisData] = useState(null); 
+  
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSendMessage = async (e) => {
+    if (e) e.preventDefault();
+    if (!inputText.trim()) return;
+
+    const userMsg = { id: Date.now(), text: inputText, sender: 'user' };
+    setMessages(prev => [...prev, userMsg]);
+    
+    const currentInput = inputText.toLowerCase();
+    setInputText("");
+    setIsLoading(true);
+
+    // KESİN KURAL: Sadece en baştaki "ürün ekle" niyetini biz yakalıyoruz, gerisi tamamen Ajan'da.
+    let isAddProductInit = false;
+    if ((currentInput.includes("ekle") || currentInput.includes("yükle") || currentInput.includes("yeni")) && !currentInput.includes("onay") && activeAction !== 'product-add') {
+      isAddProductInit = true;
+    }
+
+    try {
+      if (isAddProductInit) {
+        setActiveAction('product-add');
+        setAnalysisData(null); 
+        const staticReply = "Tabii amca, eklemek istediğin ürünün fotoğrafını sağdaki alana yükler misin?";
+        setMessages(prev => [...prev, { id: Date.now() + 1, text: staticReply, sender: 'bot' }]);
+      } else {
+        
+        let finalQuery = currentInput;
+        
+        // Torun'a amcanın o an ekranda ne gördüğünü (bağlamı) gizlice söylüyoruz
+        if (activeAction === 'product-add' && analysisData) {
+          finalQuery = `${currentInput}\n\n[GİZLİ VERİ - ŞU ANKİ YENİ ÜRÜN FORMU: Adı="${analysisData.product_name}", Fiyat="${analysisData.price}", Açıklama="${analysisData.description}", Fotoğraf="${analysisData.image_path}"]`;
+        } else if (products.length > 0) {
+          const productNames = products.map(p => p.product_name).join(', ');
+          finalQuery = `${currentInput}\n\n[GİZLİ VERİ - DÜKKANDAKİ MEVCUT ÜRÜNLER: ${productNames}]`;
+        }
+
+        const response = await api.get('/asistan', { params: { soru: finalQuery } });
+        let botResponse = response.data.torun_yaniti;
+
+        // --- AJAN KOMUT MERKEZİ ---
+        if (botResponse.includes('|||')) {
+          const parts = botResponse.split('|||');
+          botResponse = parts[0].trim(); // Amcaya sadece temiz metni göster
+          
+          try {
+            const agentCommand = JSON.parse(parts[1]);
+
+            if (agentCommand.command === "list") {
+               setActiveAction('product-list');
+               const productRes = await api.get('/list');
+               setProducts(productRes.data.products);
+            } 
+            else if (agentCommand.command === "execute") {
+               if (agentCommand.action === "delete") {
+                 let currentProds = products;
+                 if (currentProds.length === 0) {
+                   const res = await api.get('/list');
+                   currentProds = res.data.products;
+                 }
+                 const targetWord = agentCommand.target.toLowerCase();
+                 const productToDelete = currentProds.find(p => p.product_name.toLowerCase().includes(targetWord));
+                 if(productToDelete) {
+                    await api.delete(`/delete-confirm/${productToDelete.id}`);
+                    setProducts(currentProds.filter(p => p.id !== productToDelete.id));
+                    setActiveAction('product-list'); 
+                 }
+               }
+               else if (agentCommand.action === "save" && analysisData) {
+                  // ONAY VERİLDİ: Ürünü kaydet ve listeyi aç!
+                  await api.post('/confirm', analysisData);
+                  setAnalysisData(null);
+                  setActiveAction('product-list'); 
+                  const listRes = await api.get('/list');
+                  setProducts(listRes.data.products);
+               }
+            }
+            else if (agentCommand.product_name) {
+               // Ajan formu güncelledi, sağ paneli yeni verilerle doldur
+               setAnalysisData(agentCommand);
+            }
+          } catch (e) {
+            console.error("Ajan Komut Hatası:", e);
+          }
+        }
+
+        setMessages(prev => [...prev, { id: Date.now() + 1, text: botResponse, sender: 'bot' }]);
+      }
+    } catch (error) {
+      setMessages(prev => [...prev, { id: Date.now() + 1, text: "Şu an bağlantı kuramıyorum Amca.", sender: 'bot' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (productId) => {
+    // Manuel silme onayı ActionPanel içindeki butonlara devredildi
+    try {
+      const res = await api.delete(`/delete-confirm/${productId}`);
+      setProducts(products.filter(p => p.id !== productId));
+      setMessages(prev => [...prev, { id: Date.now(), text: res.data.voice_text, sender: 'bot' }]);
+    } catch (err) {
+      console.error("Silme hatası:", err);
+    }
+  };
+
+  const clearChat = () => {
+    setMessages([]);
+    setActiveAction(null);
+    setAnalysisData(null);
+  };
+
+  return (
+    <div className="flex h-screen w-full bg-[#131314] text-[#e3e3e3] overflow-hidden font-sans">
+      <Sidebar messages={messages} clearChat={clearChat} />
+
+      <main className="flex-1 flex relative">
+        {/* ÇÖZÜM: w-1/2 ile ekranı tam ortadan bölüyoruz! */}
+        <section className={`flex flex-col h-full transition-all duration-500 ${activeAction ? 'w-1/2' : 'w-full'}`}>
+          <div className="flex-1 overflow-y-auto px-4 py-10">
+            <div className="max-w-3xl mx-auto space-y-6">
+              {messages.length === 0 && (
+                <div className="text-center mt-20">
+                  <h1 className="text-5xl font-medium bg-linear-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] bg-clip-text text-transparent tracking-tight mb-4">
+                    Merhaba
+                  </h1>
+                  <p className="text-gray-500 text-lg font-light italic">"Torun, dükkana yeni bir ürün ekle" diyerek başlayabilirsin.</p>
+                </div>
+              )}
+              {messages.map((msg) => (
+                <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] px-5 py-3 rounded-2xl text-[15px] leading-relaxed shadow-sm ${msg.sender === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-[#2b2c2e] text-gray-200 rounded-tl-none border border-gray-700/50'}`}>
+                    {msg.text}
+                  </div>
+                </motion.div>
+              ))}
+              {isLoading && <div className="flex justify-start"><div className="bg-[#2b2c2e] px-4 py-2 rounded-2xl animate-pulse text-gray-500 text-sm italic">Torun düşünüyor...</div></div>}
+              <div ref={scrollRef} />
+            </div>
+          </div>
+
+          <form onSubmit={handleSendMessage} className="pb-8 px-4 flex justify-center">
+            <div className="w-full max-w-3xl bg-[#1e1f20] rounded-3xl p-2 flex items-center gap-2 border border-gray-800/50 focus-within:border-gray-700 transition-all shadow-2xl">
+              <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Torun'a sor..." className="bg-transparent flex-1 outline-none px-6 py-3 text-lg placeholder-gray-500" />
+              
+              <button type="button" onClick={() => setIsRecording(!isRecording)} className={`p-3 rounded-full transition-all ${isRecording ? 'bg-red-500/20 text-red-400 animate-pulse' : 'hover:bg-[#2b2c2e] text-gray-400 hover:text-white'}`}>
+                {isRecording ? <MicOff size={22} /> : <Mic size={22} />}
+              </button>
+              
+              <button type="submit" className="p-3 bg-blue-600 rounded-full text-white hover:bg-blue-500 transition-all shadow-lg active:scale-90">
+                <Send size={20} />
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <AnimatePresence mode="wait">
+          {activeAction && (
+            <ActionPanel 
+              key={activeAction}
+              activeAction={activeAction} 
+              closePanel={() => { setActiveAction(null); setAnalysisData(null); }} 
+              products={products} 
+              setProducts={setProducts}
+              handleDelete={handleDelete} 
+              setMessages={setMessages}
+              analysisData={analysisData}
+              setAnalysisData={setAnalysisData}
+            />
+          )}
+        </AnimatePresence>
+      </main>
+    </div>
+  );
+};
+
+export default MainLayout;
+
+
+
