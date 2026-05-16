@@ -1,5 +1,3 @@
-
-
 services:
   torun_backend:
     build: .
@@ -7,8 +5,19 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./uploads:/app/uploads         
-      - ./torun_sistemi.db:/app/torun_sistemi.db 
+      - ./uploads:/app/uploads
+      - ./torun_sistemi.db:/app/torun_sistemi.db
     env_file:
-      - .env                         
+      - .env
+    restart: always
+
+  torun_frontend:
+    image: node:20-alpine
+    container_name: torun_frontend_container
+    working_dir: /app
+    volumes:
+      - ./torun-frontend:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev"
     restart: always
