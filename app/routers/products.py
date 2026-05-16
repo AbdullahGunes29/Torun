@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, status
+from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, Form
 from sqlalchemy.orm import Session
 import os, shutil
 from datetime import datetime
@@ -9,46 +9,39 @@ from app.gemini import analyze_product_image
 
 router = APIRouter(tags=["Ürünler"])
 
+
 class ProductConfirm(BaseModel):
     product_name: str
     description: str
     price: str
     image_path: str
 
-# app/routers/products.py dosyasındaki analyze_product fonksiyonunu BUNUNLA DEĞİŞTİR:
+class ProfileUpdate(BaseModel):
+    first_name: str
+    last_name: str
+    birth_date: str
+    gender: str
 
 @router.post("/analyze")
 async def analyze_product(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
     upload_dir = "uploads"
     if not os.path.exists(upload_dir): os.makedirs(upload_dir)
     
-    file_path = os.path.join(upload_dir, f"{datetime.now().timestamp()}_{file.filename}")
+    file_name = f"{datetime.now().timestamp()}_{file.filename}"
+    file_path = os.path.join(upload_dir, file_name)
+    
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
-    # Gemini'den gelen analiz ARTIK BİR SÖZLÜK (dict)
     analiz = analyze_product_image(file_path)
-    
-    # Eskiden olan .split('\n') döngüsü tamamen silindi çünkü artık doğrudan anahtarlarla erişiyoruz
-    p_name = analiz.get("product_name", "Bilinmeyen Ürün")
-    p_desc = analiz.get("description", "Açıklama belirtilmedi.")
-    p_price = analiz.get("price", "0 TL")
-    voice_text = analiz.get("voice_text", f"{current_user.first_name} amca, fotoğrafı inceledim.")
+    relative_path = f"uploads/{file_name}"
 
     return {
-        "product_name": p_name,
-        "description": p_desc,
-        "price": p_price,
-        "image_path": file_path,
-        "voice_text": voice_text
-    }
-    # 4. Gelen sözlüğü (dict) doğrudan frontend'e gönder!
-    return {
-        "product_name": analiz_dict.get("product_name", "Bilinmeyen"),
-        "price": str(analiz_dict.get("price", "0")).replace(" TL", "").strip(),
-        "description": analiz_dict.get("description", "Açıklama yok"),
-        "image_path": file_location,
-        "voice_text": analiz_dict.get("voice_text", "Ürünü ekledim amca.")
+        "product_name": analiz.get("product_name"),
+        "description": analiz.get("description"),
+        "price": str(analiz.get("price")).replace(" TL", ""),
+        "image_path": relative_path,
+        "voice_text": analiz.get("voice_text")
     }
 
 @router.post("/confirm")
@@ -58,60 +51,95 @@ async def confirm_product(data: ProductConfirm, db: Session = Depends(get_db), c
         description=data.description,
         price=data.price,
         image_path=data.image_path,
-        owner_id=current_user.id,
-        is_active=True
+        owner_id=current_user.id
     )
     db.add(new_product)
     db.commit()
-    
-    return {
-        "mesaj": "Ürün eklendi",
-        "voice_text": f"Hayırlı olsun {current_user.first_name} amca, {data.product_name} dükkana eklendi. Başka bir emrin var mı?"
-    }
+    return {"mesaj": "Başarılı", "voice_text": f"Tamamdır {current_user.first_name} amca, ekledim."}
 
 @router.get("/list")
-def list_my_products(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_products(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     products = db.query(Product).filter(Product.owner_id == current_user.id, Product.is_active == True).all()
-    
-    if not products:
-        v_text = f"{current_user.first_name} amca, şu an dükkanın bomboş görünüyor. İstersen birkaç ürün ekleyelim."
-    else:
-        urun_isimleri = ", ".join([p.product_name for p in products])
-        v_text = f"Şu an dükkanında {len(products)} tane ürün var amcacığım. Bunlar: {urun_isimleri}."
+    return {"products": products}
 
-    return {
-        "products": products,
-        "voice_text": v_text
-    }
-
-@router.get("/delete-inquiry/{product_id}")
-def delete_inquiry(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.put("/update/{product_id}")
+def update_product(product_id: int, data: ProductConfirm, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     product = db.query(Product).filter(Product.id == product_id, Product.owner_id == current_user.id).first()
-    
     if not product:
-        raise HTTPException(status_code=404, detail="Ürün bulunamadı amcacığım.")
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı amca.")
     
-
-    voice_text = f"{current_user.first_name} amca, silmek istediğin ürün {product.product_name} mı? " \
-                 f"Fiyatı {product.price} olan ürünün fotoğrafını ekrana getirdim, bir bak bakalım. Sileyim mi?"
-
-    return {
-        "product": product, 
-        "voice_text": voice_text
-    }
+    product.product_name = data.product_name
+    product.description = data.description
+    product.price = data.price
+    db.commit()
+    return {"message": "Ürün güncellendi amca, hayırlı olsun."}
 
 @router.delete("/delete-confirm/{product_id}")
-def delete_confirm(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_product(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     product = db.query(Product).filter(Product.id == product_id, Product.owner_id == current_user.id).first()
-    
     if not product:
-        raise HTTPException(status_code=404, detail="Ürün zaten yok veya silinemedi.")
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı amca.")
     
-    p_name = product.product_name
-    product.is_active = False
+    db.delete(product)
     db.commit()
+    return {"message": "Ürün dükkandan kaldırıldı."}
+
+@router.post("/add")
+async def manual_add_product(
+    product_name: str = Form(...),
+    description: str = Form(...),
+    price: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    upload_dir = "uploads"
+    if not os.path.exists(upload_dir): os.makedirs(upload_dir)
     
+    file_name = f"{datetime.now().timestamp()}_{file.filename}"
+    file_path = os.path.join(upload_dir, file_name)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    new_product = Product(
+        product_name=product_name,
+        description=description,
+        price=price,
+        image_path=f"uploads/{file_name}",
+        owner_id=current_user.id
+    )
+    db.add(new_product)
+    db.commit()
+    db.refresh(new_product)
+    return {"status": "success", "product": new_product}
+
+@router.get("/profile")
+def get_profile(current_user: User = Depends(get_current_user)):
+   
     return {
-        "mesaj": "Ürün başarıyla kaldırıldı",
-        "voice_text": f"Tamamdır {current_user.first_name} amca, {p_name} ürününü dükkandan kaldırdım. Tertemiz oldu!"
+        "first_name": current_user.first_name or "",
+        "last_name": current_user.last_name or "",
+        "birth_date": str(current_user.birth_date) if current_user.birth_date else "",
+        "gender": current_user.gender or "",
+        "email": current_user.email
     }
+
+@router.put("/profile/update")
+def update_profile(data: ProfileUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı amca.")
+    
+    user.first_name = data.first_name
+    user.last_name = data.last_name
+    user.gender = data.gender
+
+    if data.birth_date:
+        try:
+            user.birth_date = datetime.strptime(data.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Doğum tarihi formatı YYYY-MM-DD olmalı amca.")
+            
+    db.commit()
+    return {"message": "Profil bilgilerin güncellendi amca, hayırlı olsun."}

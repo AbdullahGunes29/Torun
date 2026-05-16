@@ -7,19 +7,18 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, User
 from enum import Enum
 
-class GenderEnum(str, Enum):
-    erkek = "erkek"
-    kiz = "kız"
-    sec = "seç"
-
 
 SECRET_KEY = "torun_gizli_anahtar_99"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440
+ACCESS_TOKEN_EXPIRE_MINUTES = 43829
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+class GenderEnum(str, Enum):
+    erkek = "erkek"
+    kiz = "kız"
+    sec = "seç"
 
 def get_db():
     db = SessionLocal()

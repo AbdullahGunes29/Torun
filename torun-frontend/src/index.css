@@ -1,16 +1,14 @@
 @import "tailwindcss";
 
-/* v4'te artık @tailwind base vs. yerine yukarıdaki tek satır yeterli. */
 
 body {
   margin: 0;
-  background-color: #131314; /* Gemini Arka Planı */
+  background-color: #131314;
   color: #e3e3e3;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar'ı modern ve ince yapalım (Spagetti tasarım istemeyiz) */
 ::-webkit-scrollbar {
   width: 8px;
 }

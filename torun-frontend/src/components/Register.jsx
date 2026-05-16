@@ -9,7 +9,7 @@ const Register = ({ onSwitchToLogin }) => {
     email: '',
     password: '',
     birth_date_str: '',
-    gender: 'seç' // Backend'deki GenderEnum ('erkek', 'kız', 'seç')
+    gender: 'seç' 
   });
   
   const [error, setError] = useState('');
@@ -26,7 +26,6 @@ const Register = ({ onSwitchToLogin }) => {
     setError('');
     setSuccess('');
 
-    // Backend'in beklediği tarih formatı kontrolü (Örn: 29.01.2004)
     const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
     if (!dateRegex.test(formData.birth_date_str)) {
       setError("Tarihi Gün.Ay.Yıl formatında girmelisin (Örn: 29.01.2004)");
@@ -41,12 +40,10 @@ const Register = ({ onSwitchToLogin }) => {
     }
 
     try {
-      // Backend Query parametresi beklediği için 'params' kullanıyoruz
       const response = await api.post('/register', null, { params: formData });
       
       setSuccess(response.data.message || "Kayıt başarılı! Giriş sayfasına yönlendiriliyorsunuz...");
-      
-      // 2 saniye sonra otomatik olarak giriş ekranına at
+  
       setTimeout(() => {
         onSwitchToLogin();
       }, 2000);

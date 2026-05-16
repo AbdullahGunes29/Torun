@@ -4,18 +4,32 @@ const api = axios.create({
   baseURL: 'http://127.0.0.1:8000',
 });
 
-// İSTEK GİTMEDEN HEMEN ÖNCE ARAYA GİR:
+
 api.interceptors.request.use((config) => {
-  // Cüzdandan token'ı al
   const token = localStorage.getItem('torun_token');
-  
-  // Eğer token varsa, güvenliğe (header) göster
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
-}, (error) => {
-  return Promise.reject(error);
 });
+
+
+api.interceptors.response.use(
+  (response) => response, 
+  (error) => {
+    
+    if (error.response && error.response.status === 401) {
+      console.log("Amca anahtarın süresi dolmuş, login'e gidiyoruz...");
+      
+    
+      localStorage.removeItem('torun_token');
+      localStorage.removeItem('torun_user');
+      
+     
+      window.location.href = '/'; 
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;
