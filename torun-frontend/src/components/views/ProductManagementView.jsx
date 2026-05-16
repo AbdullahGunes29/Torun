@@ -111,7 +111,7 @@ const ProductManagementView = () => {
 
       <AnimatePresence>
         {(isAddPanelOpen || selected) && (
-          <motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="w-[450px] bg-[#0a0a0a] border-l border-gray-800 flex flex-col z-20 shadow-2xl">
+          <motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="w-112.5 bg-[#0a0a0a] border-l border-gray-800 flex flex-col z-20 shadow-2xl">
             <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-[#131314]">
               <div className="flex items-center gap-2">
                 <span className="text-blue-400 font-bold uppercase text-[11px] tracking-widest">

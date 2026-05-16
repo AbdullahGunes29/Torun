@@ -92,6 +92,10 @@ const MainLayout = () => {
           }
         }
       }
+      else {
+        setActiveAction(null);
+        setSelectedProduct(null);
+      }
 
       setMessages(prev => [...prev, { id: Date.now() + 1, text: botResponse, sender: 'bot' }]);
       playVoice(botResponse);
@@ -129,7 +133,7 @@ const MainLayout = () => {
               <div className="max-w-2xl mx-auto py-10">
                 {messages.length === 0 && (
                   <div className="text-center py-20">
-                    <h1 className="text-7xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-red-400 bg-clip-text text-transparent mb-6">Merhaba</h1>
+                    <h1 className="text-7xl font-bold bg-linear-to-r from-blue-400 via-purple-400 to-red-400 bg-clip-text text-transparent mb-6">Merhaba</h1>
                     <p className="text-xl text-gray-500 italic text-center">"Torun'a Ürünlerimi listeler misin?" diyerek başlayabilirsin.</p>
                   </div>
                 )}
