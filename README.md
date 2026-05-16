@@ -19,6 +19,9 @@
 
 ---
 
+# NOT
+   Projenin güncel hali varsayılan **main** branch'ıdır. Değerlendirmelerinizde **main**'i dikkate alın lütfen! 
+
 # Ekip için rehber 
 
 ### Kurulum
