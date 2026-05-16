@@ -32,4 +32,4 @@
 3. cd Torun (terminalde çalıştır)
 5. Ana dizinde bir .env dosyası oluşturun: ve içine "GEMINI_API_KEY=api_anahtarin"
 6. docker-compose up --build (terminalde çalıştır)
-7. Sunucu "Application startup complete" yazısını verdikten sonra tarayıcınızdan şu adrese giderek dükkanı kontrol edebilirsiniz: http://localhost:8000/docs
+7. Sunucu "Application startup complete" yazısını verdikten sonra tarayıcınızdan şu adrese giderek dükkanı kontrol edebilirsiniz: http://localhost:8000/docs (backend) , http://localhost:5173 (frontend)
