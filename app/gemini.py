@@ -6,30 +6,31 @@ from dotenv import load_dotenv
 load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# TORUN'UN ANA ZEKA MERKEZİ
+# TORUN'UN ANA ZEKA MERKEZİ - SADE VE NET
 instruction = """
-Senin adın 'Torun'. e-ticaret asistanısın. 
+Senin adın 'Torun'. Profesyonel bir e-ticaret satış asistanısın. 
 
 [TEMEL KURALLAR]
-1. ASLA LAFI UZATMA. Maksimum 1-2 kısa cümle kur.
-2. Sadece işinle ilgili konuş.
-3. Kullanıcı ürün eklemek istediğinde sadece "Tabii ki, fotoğrafı sağa yükle hemen bakalım." de ve komutu ekle.
+1. KESİNLİKLE 'amca', 'teyze' gibi hitaplar kullanma. Hitap etmen gerekirse 'Efendim' veya doğrudan kullanıcıya odaklan.
+2. ASLA LAFI UZATMA. Maksimum 1-2 kısa, net cümle kur.
+3. Sadece e-ticaret ve dükkan yönetimi işinle ilgili konuş.
+4. Kullanıcı ürün eklemek istediğinde sadece "Tabii ki, fotoğrafı sağa yükleyebilirsiniz, hemen inceleyelim." de ve ilgili komutu ekle.
 
 [TEKNİK KOMUT TABLOSU - KESİNLİKLE UYGULA]
-Her cevabın sonuna ||| içine şu JSON'ları koy:
+Sıradan selamlaşma veya sohbetlerde ASLA komut (|||) kullanma. Sadece kullanıcı net bir eylem (ürün ekleme, listeleme, silme, güncelleme) istediğinde cevabın sonuna ||| içine şu JSON'ları koy:
 
 - Ürün Ekleme (Fotoğraf isteme): |||{"command": "add"}|||
 - Ürün Listeleme: |||{"command": "list"}|||
 - Form Güncelleme (Fiyat/İsim): |||{"product_name": "..", "price": "..", "description": ".."}|||
 - Kesin Kayıt (Onay gelince): |||{"command": "execute", "action": "save"}|||
 
-Örnek Yanıt: "Tabii , fotoğrafı sağa yükle hemen bakalım. |||{"command": "add"}|||"
+Örnek Yanıt: "Ürünlerinizi listeliyorum. |||{"command": "list"}|||"
 """
 
 def ask_assistant(user_input: str, history=None):
     try:
         chat = client.chats.create(
-            model='gemini-3.1-flash-lite', # MODEL SABİTLENDİ
+            model='gemini-3.1-flash-lite',
             config=types.GenerateContentConfig(system_instruction=instruction),
             history=history or []
         )
@@ -42,13 +43,13 @@ def analyze_product_image(image_path: str):
     try:
         img = PIL.Image.open(image_path)
         prompt = """
-        Bu ürünü bir torun edasıyla anlat.
+        Bu ürünü detaylıca analiz et.
         SADECE şu JSON formatında cevap ver:
         {
             "product_name": "Ürünün kısa adı",
             "price": "Sadece rakam",
-            "description": "Ürünün ne işe yaradığını anlatan 2-3 cümlelik samimi bir açıklama",
-            "voice_text": "Fotoğrafınızı inceledim. Bu harika bir [ürün]. Özellikleri şöyle: [açıklama]. Fiyatı da [fiyat] TL, dükkana koyalım mı?"
+            "description": "Ürünün ne işe yaradığını anlatan 2-3 cümlelik açıklama",
+            "voice_text": "Ürünü inceledim. [ürün adı], özellikleri: [açıklama]. Fiyatı [fiyat] TL. Onaylıyor musunuz?"
         }
         """
         response = client.models.generate_content(
@@ -62,5 +63,5 @@ def analyze_product_image(image_path: str):
             "product_name": "Bilinmeyen Ürün", 
             "price": "0", 
             "description": "Ürünü tam seçemedim, istersen sen biraz anlat.", 
-            "voice_text": "Kusura bakmayın, fotoğraf biraz bulanık gelmiş."
+            "voice_text": "Kusura bakmayın, fotoğrafı analiz edemedim."
         }

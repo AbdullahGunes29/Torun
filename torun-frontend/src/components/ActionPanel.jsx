@@ -36,10 +36,10 @@ const ActionPanel = ({
       setProducts(res.data.products || []);
       
       if (typeof setMessages === 'function') {
-        setMessages(prev => [...prev, { id: Date.now(), text: "Bilgileri güncelledim amca.", sender: 'bot' }]);
+        setMessages(prev => [...prev, { id: Date.now(), text: "Ürün bilgileri başarıyla güncellendi.", sender: 'bot' }]);
       }
     } catch (e) {
-      setError("Bilgiler güncellenemedi amca.");
+      setError("Bilgiler güncellenirken bir sorun oluştu.");
     } finally {
       setIsLoading(false);
     }
@@ -57,7 +57,7 @@ const ActionPanel = ({
       if (typeof setMessages === 'function') {
         setMessages(prev => [...prev, { 
           id: Date.now(), 
-          text: `"${selectedProduct.product_name}" ürününü dükkandan sildim amca.`, 
+          text: `"${selectedProduct.product_name}" ürünü dükkandan kaldırıldı.`, 
           sender: 'bot' 
         }]);
       }
@@ -66,7 +66,7 @@ const ActionPanel = ({
       setDeleteConfirm(false);
       
     } catch (e) {
-      setError("Ürün silinemedi amca, backend bağlantısını bir yokla.");
+      setError("Ürün silinemedi, lütfen bağlantınızı kontrol edin.");
     } finally {
       setIsLoading(false);
     }
@@ -140,10 +140,10 @@ const ActionPanel = ({
                     </motion.div>
                   ) : (
                     <motion.div key="confirm" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="p-4 bg-red-900/10 border border-red-500/30 rounded-xl space-y-4">
-                      <p className="text-sm text-red-400 text-center font-medium">Bu ürünü silmek istiyor musunuz amca?</p>
+                      <p className="text-sm text-red-400 text-center font-medium">Bu ürünü silmek istediğinize emin misiniz?</p>
                       <div className="flex gap-2">
                         <button onClick={confirmDelete} disabled={isLoading} className="flex-1 bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-sm transition-all">
-                          {isLoading ? "Siliyor..." : "Sil"}
+                          {isLoading ? "Siliyor..." : "Evet, Sil"}
                         </button>
                         <button onClick={() => setDeleteConfirm(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 p-3 rounded-lg font-bold text-sm transition-all">
                           Vazgeç
@@ -157,7 +157,7 @@ const ActionPanel = ({
           ) : (
             <div className="space-y-4">
               {products.length === 0 ? (
-                <div className="text-center py-20 text-gray-600 italic font-medium">Henüz ürün yok amca.</div>
+                <div className="text-center py-20 text-gray-600 italic font-medium">Dükkanda henüz ürün bulunmuyor.</div>
               ) : (
                 products.map(p => (
                   <motion.div 

@@ -16,11 +16,6 @@ class ProductConfirm(BaseModel):
     price: str
     image_path: str
 
-class ProfileUpdate(BaseModel):
-    first_name: str
-    last_name: str
-    birth_date: str
-    gender: str
 
 @router.post("/analyze")
 async def analyze_product(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
@@ -41,7 +36,6 @@ async def analyze_product(file: UploadFile = File(...), current_user: User = Dep
         "description": analiz.get("description"),
         "price": str(analiz.get("price")).replace(" TL", ""),
         "image_path": relative_path,
-        "voice_text": analiz.get("voice_text")
     }
 
 @router.post("/confirm")
@@ -55,7 +49,7 @@ async def confirm_product(data: ProductConfirm, db: Session = Depends(get_db), c
     )
     db.add(new_product)
     db.commit()
-    return {"mesaj": "Başarılı", "voice_text": f"Tamamdır {current_user.first_name} amca, ekledim."}
+    return {"mesaj": "Başarılı", "voice_text": f"Tamamdır {current_user.first_name} ürünü ekledim."}
 
 @router.get("/list")
 def list_products(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -66,19 +60,19 @@ def list_products(db: Session = Depends(get_db), current_user: User = Depends(ge
 def update_product(product_id: int, data: ProductConfirm, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     product = db.query(Product).filter(Product.id == product_id, Product.owner_id == current_user.id).first()
     if not product:
-        raise HTTPException(status_code=404, detail="Ürün bulunamadı amca.")
+        raise HTTPException(status_code=404, detail="Ürün bulamadım.")
     
     product.product_name = data.product_name
     product.description = data.description
     product.price = data.price
     db.commit()
-    return {"message": "Ürün güncellendi amca, hayırlı olsun."}
+    return {"message": "Ürün güncellendi, hayırlı olsun."}
 
 @router.delete("/delete-confirm/{product_id}")
 def delete_product(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     product = db.query(Product).filter(Product.id == product_id, Product.owner_id == current_user.id).first()
     if not product:
-        raise HTTPException(status_code=404, detail="Ürün bulunamadı amca.")
+        raise HTTPException(status_code=404, detail="Ürün bulamadım.")
     
     db.delete(product)
     db.commit()
@@ -114,32 +108,3 @@ async def manual_add_product(
     db.refresh(new_product)
     return {"status": "success", "product": new_product}
 
-@router.get("/profile")
-def get_profile(current_user: User = Depends(get_current_user)):
-   
-    return {
-        "first_name": current_user.first_name or "",
-        "last_name": current_user.last_name or "",
-        "birth_date": str(current_user.birth_date) if current_user.birth_date else "",
-        "gender": current_user.gender or "",
-        "email": current_user.email
-    }
-
-@router.put("/profile/update")
-def update_profile(data: ProfileUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    user = db.query(User).filter(User.id == current_user.id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı amca.")
-    
-    user.first_name = data.first_name
-    user.last_name = data.last_name
-    user.gender = data.gender
-
-    if data.birth_date:
-        try:
-            user.birth_date = datetime.strptime(data.birth_date, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Doğum tarihi formatı YYYY-MM-DD olmalı amca.")
-            
-    db.commit()
-    return {"message": "Profil bilgilerin güncellendi amca, hayırlı olsun."}
