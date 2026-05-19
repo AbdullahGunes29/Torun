@@ -9,7 +9,7 @@
 ---
    Geliştirmeye başladığımız projemiz **Torun**: Yaşlı bireylerin e-ticaret sektöründe günümüz gelişen teknolojisinde ayakta kalabilecekleri AI desteği ile kullanıcı dostu, kolay ve anlaşılır arayüz ve pek çok işlemin teknik bilgi gererktirmeden yapılabileceği bir ortam sunmayı hedefelemekte. Kurumsal e-ticaret firmalarında satıcı profilleri bulunun bireyler satıcı profillerinini kolaylıkla yönetebilecekler. Kullanıcılar Trendyol gibi platformlarında bulunan satıcı profilleri aracılığıyla aldıkları API keys ile sisteme kayıt olduklarında sistemimizi rahatlıkla kullanabilecekler. Kurduğumuz agentic yapı sayesinde Torun asistanımız işlemleri kullanıcın emirleri doğrultusunda daha kolay ve hızlı bir şekilde gerçekleştirebilmekte.  
 ---
-   Projemizi Hackathon 26 için geliştirdiğimizden dolayı kısıtlı sürede kurumsal platformlarda satıcı profili oluşturmamız mümkün değildi. Bizde vizyonumuzu koruyarak **Torun**'u  kendi girdiğimiz vverilerle geliştirdik. İlerleyen süreçete Trandyol gibi platformlarda kullanılabilecek bir sistemin demosunu geliştirmeyi hedefledik.
+   Projemizi Hackathon 26 için geliştirdiğimizden dolayı kısıtlı sürede kurumsal platformlarda satıcı profili oluşturmamız mümkün değildi. Bizde vizyonumuzu koruyarak **Torun**'u  kendi girdiğimiz verilerle geliştirdik. İlerleyen süreçete Trandyol gibi platformlarda kullanılabilecek bir sistemin demosunu geliştirmeyi hedefledik.
 ---
 
 ## Proje kapsamında ilk hedeflerimiz
