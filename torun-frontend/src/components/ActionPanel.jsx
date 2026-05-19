@@ -111,7 +111,7 @@ const ActionPanel = ({
           selectedProduct ? (
             <div className="space-y-6">
               <div className="w-full h-64 bg-[#131314] rounded-2xl border border-gray-800 overflow-hidden flex items-center justify-center p-2">
-                <img src={`http://127.0.0.1:8000/${selectedProduct.image_path}`} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" alt="ürün"/>
+                <img src={`https://torunai.com/${selectedProduct.image_path}`} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" alt="ürün"/>
               </div>
               
               <div className="bg-[#1e1f20] p-6 rounded-2xl border border-gray-800 space-y-4 shadow-xl">
@@ -166,7 +166,7 @@ const ActionPanel = ({
                     onClick={() => setSelectedProduct(p)} 
                     className="bg-[#1e1f20] p-4 rounded-xl border border-gray-800 flex gap-4 cursor-pointer hover:border-blue-500 transition-all group"
                   >
-                    <img src={`http://127.0.0.1:8000/${p.image_path}`} className="w-16 h-16 object-cover rounded-lg border border-gray-700" alt="thumb" />
+                    <img src={`https://torunai.com/${p.image_path}`} className="w-16 h-16 object-cover rounded-lg border border-gray-700" alt="thumb" />
                     <div className="flex-1">
                       <h3 className="font-bold group-hover:text-blue-400 transition-colors">{p.product_name}</h3>
                       <p className="text-blue-400 text-sm font-bold">{p.price} TL</p>

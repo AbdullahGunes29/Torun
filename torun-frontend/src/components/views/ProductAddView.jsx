@@ -95,7 +95,7 @@ const handleAddToShop = async () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="relative rounded-2xl overflow-hidden border border-gray-800 shadow-2xl">
-        <img src={`http://127.0.0.1:8000/${analysisData.image_path}`} className="w-full h-64 object-contain bg-[#131314] p-2" alt="ürün" />
+        <img src={`https://torunai.com/${analysisData.image_path}`} className="w-full h-64 object-contain bg-[#131314] p-2" alt="ürün" />
       </div>
       <div className="bg-[#1e1f20] p-6 rounded-2xl border border-gray-800 space-y-4 shadow-xl">
         <input value={analysisData.product_name} onChange={e => setAnalysisData({...analysisData, product_name: e.target.value})} className="w-full bg-[#131314] p-3 rounded-xl border border-gray-800 text-white" />

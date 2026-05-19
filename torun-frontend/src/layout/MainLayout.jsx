@@ -141,7 +141,7 @@ const MainLayout = () => {
                     <div className="flex justify-start">
                       <div className="bg-[#2b2c2e] px-5 py-3 rounded-2xl flex items-center gap-3 border border-gray-700 shadow-md">
                         <Loader2 size={18} className="animate-spin text-blue-400" />
-                        <span className="text-sm text-gray-400 font-medium">İstek işleniyor...</span>
+                        <span className="text-sm text-gray-400 font-medium">Torun düşünüyor...</span>
                       </div>
                     </div>
                   )}

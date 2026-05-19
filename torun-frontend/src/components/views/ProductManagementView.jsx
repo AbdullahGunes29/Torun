@@ -100,7 +100,7 @@ const ProductManagementView = () => {
           {products.map(p => (
             <motion.div key={p.id} layout onClick={() => openEditPanel(p)} className={`bg-[#1e1f20] p-4 rounded-3xl border transition-all cursor-pointer group shadow-xl ${selected?.id === p.id ? 'border-blue-500' : 'border-gray-800'}`}>
               <div className="relative aspect-square mb-4 rounded-2xl overflow-hidden bg-[#131314]">
-                <img src={`http://127.0.0.1:8000/${p.image_path}`} className="w-full h-full object-contain" alt="ürün" />
+                <img src={`https://torunai.com/${p.image_path}`} className="w-full h-full object-contain" alt="ürün" />
               </div>
               <h3 className="font-bold text-lg truncate group-hover:text-blue-400">{p.product_name}</h3>
               <p className="text-blue-400 font-black mt-1">{p.price} TL</p>
@@ -146,7 +146,7 @@ const ProductManagementView = () => {
               ) : (
                 <div className="space-y-6">
                   <div className="w-full h-64 bg-[#131314] rounded-2xl border border-gray-800 overflow-hidden flex items-center justify-center p-2">
-                    <img src={`http://127.0.0.1:8000/${selected.image_path}`} className="max-w-full max-h-full object-contain rounded-xl" alt="ürün"/>
+                    <img src={`https://torunai.com/${selected.image_path}`} className="max-w-full max-h-full object-contain rounded-xl" alt="ürün"/>
                   </div>
                   <div className="space-y-4">
                     <input value={selected.product_name} onChange={e => setSelected({...selected, product_name: e.target.value})} className="w-full bg-[#131314] p-4 rounded-2xl border border-gray-800 text-white focus:border-blue-500 outline-none" />
