@@ -1,5 +1,5 @@
 # Torun
-## Hackathon 26 için HürTech ekibimiz üyeleri olarak
+## BTK HACKATHON 2026 için HürTech ekibimiz üyeleri olarak
 
 - Musa IŞIL
 - Abdullah GÜNEŞ
